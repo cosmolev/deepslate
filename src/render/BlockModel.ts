@@ -1,7 +1,6 @@
 import type { ReadonlyVec3 } from 'gl-matrix'
 import { glMatrix, mat4, vec3 } from 'gl-matrix'
-import type { Direction } from '../core/index.js'
-import { Identifier } from '../core/index.js'
+import { Direction, Identifier } from '../core/index.js'
 import { Vector } from '../math/index.js'
 import type { Color } from '../util/index.js'
 import type { Cull } from './Cull.js'
@@ -58,14 +57,6 @@ const rotationAxis: {[key in Axis] : ReadonlyVec3} = {
 	z: [0, 0, 1],
 }
 
-const SQRT2 = 1.41421356237
-
-const rescaleAxis: {[key in Axis] : ReadonlyVec3} = {
-	x: [1, SQRT2, SQRT2],
-	y: [SQRT2, 1, SQRT2],
-	z: [SQRT2, SQRT2, 1],
-}
-
 export interface BlockModelProvider {
 	getBlockModel(id: Identifier): BlockModel | null
 }
@@ -102,7 +93,7 @@ export class BlockModel {
 		return t
 	}
 
-	public getMesh(atlas: TextureAtlasProvider, cull: Cull, tint?: Color | ((index: number) => Color)) {
+	public getMesh(atlas: TextureAtlasProvider, cull: Cull, tint?: Color | ((index: number) => Color), uvTransforms?: Record<Direction, mat4>) {
 		const mesh = new Mesh()
 		const getTint = (index?: number): Color => {
 			if (tint === undefined) return [1, 1, 1]
@@ -111,17 +102,17 @@ export class BlockModel {
 			return tint
 		}
 		for (const e of this.elements ?? []) {
-			mesh.merge(this.getElementMesh(e, atlas, cull, getTint))
+			mesh.merge(this.getElementMesh(e, atlas, cull, getTint, uvTransforms))
 		}
 		return mesh
 	}
 
-	public getElementMesh(e: BlockModelElement, atlas: TextureAtlasProvider, cull: Cull, getTint: (index?: number) => Color) {
+	public getElementMesh(e: BlockModelElement, atlas: TextureAtlasProvider, cull: Cull, getTint: (index?: number) => Color, uvTransforms?: Record<Direction, mat4>) {
 		const mesh = new Mesh()
 		const [x0, y0, z0] = e.from
 		const [x1, y1, z1] = e.to
 
-		const addFace = (face: BlockModelFace, uv: UV, pos: number[]) => {
+		const addFace = (side: Direction, face: BlockModelFace, uv: UV, pos: number[]) => {
 			const quad = Quad.fromPoints(
 				new Vector(pos[0], pos[1], pos[2]),
 				new Vector(pos[3], pos[4], pos[5]),
@@ -145,31 +136,40 @@ export class BlockModel {
 				u0 + uv[r[4]], v0 + uv[r[5]],
 				u0 + uv[r[6]], v0 + uv[r[7]],
 			], [u0 + Math.min(uv[0], uv[2]), v0 + Math.min(uv[1], uv[3]), u0 + Math.max(uv[0], uv[2]), v0 + Math.max(uv[1], uv[3])])
+			if (uvTransforms) {
+				for (const vertex of quad.vertices()) {
+					const [u, v] = vertex.texture!
+					const p = vec3.transformMat4(vec3.create(), [(u - u0) / (u1 - u0), (v - v0) / (v1 - v0), 0], uvTransforms[side])
+					vertex.texture = [u0 + p[0] * (u1 - u0), v0 + p[1] * (v1 - v0)]
+				}
+				const vertices = quad.vertices(), us = vertices.map(v => v.texture![0]), vs = vertices.map(v => v.texture![1])
+				for (const vertex of vertices) vertex.textureLimit = [Math.min(...us), Math.min(...vs), Math.max(...us), Math.max(...vs)]
+			}
 			mesh.quads.push(quad)
 		}
 	
 		if (e.faces?.up?.texture && (!e.faces.up.cullface || !cull[e.faces.up.cullface])) {
-			addFace(e.faces.up, [x0, 16 - z1, x1, 16 - z0],
+			addFace(Direction.UP, e.faces.up, [x0, z0, x1, z1],
 				[x0, y1, z1,  x1, y1, z1,  x1, y1, z0,  x0, y1, z0])
 		}
 		if (e.faces?.down?.texture && (!e.faces.down.cullface || !cull[e.faces.down.cullface])) {
-			addFace(e.faces.down, [16 - z1, 16 - x1, 16 - z0, 16 - x0],
+			addFace(Direction.DOWN, e.faces.down, [x0, 16 - z1, x1, 16 - z0],
 				[x0, y0, z0,  x1, y0, z0,  x1, y0, z1,  x0, y0, z1])
 		}
 		if (e.faces?.south?.texture && (!e.faces.south.cullface || !cull[e.faces.south.cullface])) {
-			addFace(e.faces.south, [x0, 16 - y1, x1, 16 - y0], 
+			addFace(Direction.SOUTH, e.faces.south, [x0, 16 - y1, x1, 16 - y0],
 				[x0, y0, z1,  x1, y0, z1,  x1, y1, z1,  x0, y1, z1])
 		}
 		if (e.faces?.north?.texture && (!e.faces.north.cullface || !cull[e.faces.north.cullface])) {
-			addFace(e.faces.north, [16 - x1, 16 - y1, 16 - x0, 16 - y0], 
+			addFace(Direction.NORTH, e.faces.north, [16 - x1, 16 - y1, 16 - x0, 16 - y0],
 				[x1, y0, z0,  x0, y0, z0,  x0, y1, z0,  x1, y1, z0])
 		}
 		if (e.faces?.east?.texture && (!e.faces.east.cullface || !cull[e.faces.east.cullface])) {
-			addFace(e.faces.east, [16 - z1, 16 - y1, 16 - z0, 16 - y0], 
+			addFace(Direction.EAST, e.faces.east, [16 - z1, 16 - y1, 16 - z0, 16 - y0],
 				[x1, y0, z1,  x1, y0, z0,  x1, y1, z0,  x1, y1, z1])
 		}
 		if (e.faces?.west?.texture && (!e.faces.west.cullface || !cull[e.faces.west.cullface])) {
-			addFace(e.faces.west, [z0, 16 - y1, z1, 16 - y0], 
+			addFace(Direction.WEST, e.faces.west, [z0, 16 - y1, z1, 16 - y0],
 				[x0, y0, z0,  x0, y0, z1,  x0, y1, z1,  x0, y1, z0])
 		}
 	
@@ -179,7 +179,9 @@ export class BlockModel {
 			mat4.translate(t, t, origin)
 			mat4.rotate(t, t, glMatrix.toRadian(e.rotation.angle), rotationAxis[e.rotation.axis])
 			if (e.rotation.rescale) {
-				mat4.scale(t, t, rescaleAxis[e.rotation.axis])
+				const factor = 1 / Math.cos(glMatrix.toRadian(e.rotation.angle))
+				mat4.scale(t, t, [e.rotation.axis === 'x' ? 1 : factor,
+					e.rotation.axis === 'y' ? 1 : factor, e.rotation.axis === 'z' ? 1 : factor])
 			}
 			vec3.negate(origin, origin)
 			mat4.translate(t, t, origin)

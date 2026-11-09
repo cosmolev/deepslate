@@ -1,12 +1,12 @@
 {
   "name": "deepslate",
   "description": "Library for rendering and emulating parts of Minecraft",
-  "version": "0.27.2",
+  "version": "0.27.2-cosmolev.1",
   "author": "Misode",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/misode/deepslate.git"
+    "url": "https://github.com/cosmolev/deepslate.git"
   },
   "type": "module",
   "main": "./lib/index.js",

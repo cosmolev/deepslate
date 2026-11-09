@@ -5,6 +5,7 @@ import type { BlockModelProvider } from './BlockModel.js'
 import { Cull } from './Cull.js'
 import { Mesh } from './Mesh.js'
 import type { TextureAtlasProvider } from './TextureAtlas.js'
+import { uvLock } from './UvLock.js'
 
 type ModelVariant = {
 	model: string,
@@ -63,7 +64,8 @@ export class BlockDefinition {
 				throw new Error(`Cannot find block model ${variant.model}`)
 			}
 			const tint = name ? BlockColors[name.path]?.(props) : undefined
-			const variantMesh = blockModel.getMesh(atlas, newCull, tint)
+			const variantMesh = blockModel.getMesh(atlas, newCull, tint,
+				variant.uvlock ? uvLock(variant.x ?? 0, variant.y ?? 0) : undefined)
 
 			if (variant.x || variant.y) {
 				const t = mat4.create()

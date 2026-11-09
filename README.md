@@ -1,6 +1,8 @@
 # Deepslate
 > Library for rendering and emulating parts of Minecraft
 
+This fork contains the vanilla rendering fixes documented in [FORK.md](FORK.md).
+
 ## Install
 ```
 npm install deepslate

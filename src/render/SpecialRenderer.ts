@@ -50,49 +50,51 @@ const DyeColors: Record<string, Color> = {
 }
 
 export namespace SpecialRenderers {
-	export function chestRenderer(texture: Identifier) {
+	export function chestRenderer(texture: Identifier, type: 'single' | 'left' | 'right' = 'single') {
 		return (atlas: TextureAtlasProvider) => {
+			// Entity cube UVs use a 64x64 sheet, with the lid closed at y=9.
+			const box = (from: number[], to: number[], u: number, v: number): BlockModelElement => {
+				const [w, h, d] = to.map((n, i) => n - from[i])
+				const face = (a: number, b: number, c: number, e: number, rotation: 0 | 180 = 180) =>
+					({ texture: '#0', uv: [a / 4, b / 4, c / 4, e / 4] as [number, number, number, number], rotation })
+				return { from, to, faces: {
+					west: face(u, v + d, u + d, v + d + h),
+					north: face(u + d, v + d, u + d + w, v + d + h),
+					east: face(u + d + w, v + d, u + 2 * d + w, v + d + h),
+					south: face(u + 2 * d + w, v + d, u + 2 * d + 2 * w, v + d + h),
+					down: face(u + d, v, u + d + w, v + d, 0),
+					up: face(u + d + w, v + d, u + d + 2 * w, v, 0),
+				} }
+			}
+			const x0 = type === 'right' ? 0 : 1, x1 = type === 'left' ? 16 : 15
+			const latch0 = type === 'left' ? 15 : type === 'right' ? 0 : 7
+			const latch1 = type === 'left' ? 16 : type === 'right' ? 1 : 9
+			const id = type === 'single' ? texture : Identifier.parse(`${texture}_${type}`)
+			const transform = mat4.create()
+			mat4.translate(transform, transform, [8, 0, 8])
+			mat4.rotateY(transform, transform, Math.PI)
+			mat4.translate(transform, transform, [-8, 0, -8])
 			return new BlockModel(undefined, {
-				0: texture.withPrefix('entity/chest/').toString(),
+				0: id.withPrefix('entity/chest/').toString(),
 			}, [
-				{
-					from: [1, 0, 1],
-					to: [15, 10, 15],
-					faces: {
-						north: {uv: [10.5, 8.25, 14, 10.75], rotation: 180, texture: '#0'},
-						east: {uv: [7, 8.25, 10.5, 10.75], rotation: 180, texture: '#0'},
-						south: {uv: [3.5, 8.25, 7, 10.75], rotation: 180, texture: '#0'},
-						west: {uv: [0, 8.25, 3.5, 10.75], rotation: 180, texture: '#0'},
-						up: {uv: [7, 4.75, 10.5, 8.25], texture: '#0'},
-						down: {uv: [3.5, 4.75, 7, 8.25], texture: '#0'},
-					},
-				},
-				{
-					from: [1, 10, 1],
-					to: [15, 14, 15],
-					faces: {
-						north: {uv: [10.5, 3.75, 14, 4.75], rotation: 180, texture: '#0'},
-						east: {uv: [7, 3.75, 10.5, 4.75], rotation: 180, texture: '#0'},
-						south: {uv: [3.5, 3.75, 7, 4.75], rotation: 180, texture: '#0'},
-						west: {uv: [0, 3.75, 3.5, 4.75], rotation: 180, texture: '#0'},
-						up: {uv: [7, 0, 10.5, 3.5], texture: '#0'},
-						down: {uv: [3.5, 0, 7, 3.5], texture: '#0'},
-					},
-				},
-				{
-					from: [7, 7, 0],
-					to: [9, 11, 2],
-					faces: {
-						north: {uv: [0.25, 0.25, 0.75, 1.25], rotation: 180, texture: '#0'},
-						east: {uv: [0, 0.25, 0.25, 1.25], rotation: 180, texture: '#0'},
-						south: {uv: [1, 0.25, 1.5, 1.25], rotation: 180, texture: '#0'},
-						west: {uv: [0.75, 0.25, 1, 1.25], rotation: 180, texture: '#0'},
-						up: {uv: [0.25, 0, 0.75, 0.25], rotation: 180, texture: '#0'},
-						down: {uv: [0.75, 0, 1.25, 0.25], rotation: 180, texture: '#0'},
-					},
-				},
-			]).getMesh(atlas, Cull.none())
+				box([x0, 0, 1], [x1, 10, 15], 0, 19),
+				box([x0, 9, 1], [x1, 14, 15], 0, 0),
+				box([latch0, 7, 15], [latch1, 11, 16], 0, 0),
+			]).getMesh(atlas, Cull.none()).transform(transform)
 		}
+	}
+
+	/** Static portal surfaces. Animated, view-dependent portal shading belongs to the host renderer. */
+	export function endPortalRenderer(atlas: TextureAtlasProvider, cull: Cull, gateway = false) {
+		const side = (cullface: Direction) => ({ texture: '#0', cullface })
+		return new BlockModel(undefined, { 0: 'entity/end_portal' }, [{
+			from: [0, gateway ? 0 : 6, 0], to: [16, gateway ? 16 : 12, 16],
+			faces: {
+				up: side(Direction.UP), down: side(Direction.DOWN),
+				...(gateway ? { north: side(Direction.NORTH), south: side(Direction.SOUTH),
+					east: side(Direction.EAST), west: side(Direction.WEST) } : {}),
+			},
+		}]).getMesh(atlas, cull)
 	}
 
 	export function decoratedPotRenderer(atlas: TextureAtlasProvider) {
@@ -175,9 +177,9 @@ export namespace SpecialRenderers {
 			.getMesh(atlas, Cull.none(), (index: number) => DyeColors[tints[index] ?? ''] ?? [1, 1, 1])
 	}
 
-	export function headRenderer(texture: Identifier, n: number) {
+	export function headRenderer(texture: Identifier, n: number, hat = false) {
 		return (atlas: TextureAtlasProvider) => {
-			return new BlockModel(undefined, {
+			const mesh = new BlockModel(undefined, {
 				0: texture.withPrefix('entity/').toString(),
 			}, [
 				{
@@ -194,6 +196,20 @@ export namespace SpecialRenderers {
 				},
 			])
 				.getMesh(atlas, Cull.none())
+			if (hat) {
+				mesh.merge(new BlockModel(undefined, { 0: texture.withPrefix('entity/').toString() }, [{
+					from: [3.75, -0.25, 3.75], to: [12.25, 8.25, 12.25],
+					faces: {
+						north: { uv: [14, 2, 16, 4], texture: '#0' },
+						east: { uv: [10, 2, 8, 4], texture: '#0' },
+						south: { uv: [10, 2, 12, 4], texture: '#0' },
+						west: { uv: [14, 2, 12, 4], texture: '#0' },
+						up: { uv: [10, 0, 12, 2], texture: '#0' },
+						down: { uv: [12, 0, 14, 2], texture: '#0' },
+					},
+				}]).getMesh(atlas, Cull.none()))
+			}
+			return mesh
 		}
 	}
 
@@ -648,7 +664,7 @@ export namespace SpecialRenderers {
 
 	function createBannerRenderer(color: string, config: { base: any[], pattern: (index: number) => any }) {
 		return (atlas: TextureAtlasProvider, patterns?: NbtList<NbtCompound>) => {
-			const textures: { [key: string]: string } = { 0: 'entity/banner/banner_base' }
+			const textures: { [key: string]: string } = { 0: 'entity/banner_base' }
 			const elements = [...config.base]
 			const colors: string[] = [color]
 
@@ -1160,8 +1176,11 @@ export namespace SpecialRenderers {
 		'minecraft:creeper_head': SpecialRenderers.headRenderer(Identifier.create('creeper/creeper'), 2),
 		'minecraft:dragon_head': SpecialRenderers.dragonHeadRenderer(),
 		'minecraft:piglin_head': SpecialRenderers.piglinHeadRenderer(),
-		'minecraft:player_head': SpecialRenderers.headRenderer(Identifier.create('player/wide/steve'), 1), // TODO: fix texture
+		'minecraft:player_head': SpecialRenderers.headRenderer(Identifier.create('player/wide/steve'), 1, true),
 	}))
+	const DoubleChestRenderers = new Map<string, (atlas: TextureAtlasProvider) => Mesh>(['chest', 'trapped_chest'].flatMap(name =>
+		(['left', 'right'] as const).map(type => [`minecraft:${name}:${type}`,
+			SpecialRenderers.chestRenderer(Identifier.create(name === 'chest' ? 'normal' : 'trapped'), type)] as const)))
 
 	const WoodTypes = [
 		'oak',
@@ -1199,6 +1218,7 @@ export namespace SpecialRenderers {
 			[`minecraft:${color}_shulker_box`, SpecialRenderers.shulkerBoxRenderer(Identifier.create(`shulker_${color}`))]
 		)
 	)
+	ShulkerBoxRenderers.set('minecraft:shulker_box', SpecialRenderers.shulkerBoxRenderer(Identifier.create('shulker')))
 
 	const BedRenderers = new Map(
 		Object.keys(DyeColors).map(color =>
@@ -1237,7 +1257,11 @@ export namespace SpecialRenderers {
 		if (block.is('lava')) {
 			mesh.merge(liquidRenderer('lava', getInt(block, 'level'), atlas, cull))
 		}
-		const chestRenderer = ChestRenderers.get(block.getName().toString())
+		if (block.is('end_portal') || block.is('end_gateway')) {
+			mesh.merge(endPortalRenderer(atlas, cull, block.is('end_gateway')))
+		}
+		const chestRenderer = DoubleChestRenderers.get(`${block.getName()}:${getStr(block, 'type', 'single')}`)
+			?? ChestRenderers.get(block.getName().toString())
 		if (chestRenderer !== undefined) {
 			const facing = getStr(block, 'facing', 'south')
 			const t = mat4.create()
@@ -1249,11 +1273,19 @@ export namespace SpecialRenderers {
 		if (block.is('decorated_pot')) {
 			mesh.merge(decoratedPotRenderer(atlas))
 		}
-		const skullRenderer = SkullRenderers.get(block.getName().toString())
+		const skullName = block.getName().toString()
+		const wallSkull = skullName.includes('_wall_')
+		const skullRenderer = SkullRenderers.get(wallSkull ? skullName.replace('_wall_', '_') : skullName)
 		if (skullRenderer !== undefined) {
-			const rotation = getInt(block, 'rotation') / 16 * Math.PI * 2
+			const facing = getStr(block, 'facing', 'north')
+			const offset: [number, number, number] = wallSkull
+				? [facing === 'east' ? -4 : facing === 'west' ? 4 : 0, 4, facing === 'south' ? -4 : facing === 'north' ? 4 : 0]
+				: [0, 0, 0]
+			const rotation = wallSkull
+				? (facing === 'north' ? Math.PI : facing === 'east' ? Math.PI / 2 : facing === 'west' ? -Math.PI / 2 : 0)
+				: Math.PI - getInt(block, 'rotation') / 16 * Math.PI * 2
 			const t = mat4.create()
-			mat4.translate(t, t, [8, 8, 8])
+			mat4.translate(t, t, [8 + offset[0], 8 + offset[1], 8 + offset[2]])
 			mat4.rotateY(t, t, rotation)
 			mat4.translate(t, t, [-8, -8, -8])
 			mesh.merge(skullRenderer(atlas).transform(t))
